@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, Numeric
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
@@ -41,7 +41,9 @@ class Accommodation(Base):
     capacity = Column(Integer, nullable=False)
     status = Column(Enum(AccommodationStatus), default=AccommodationStatus.AVAILABLE, nullable=False)
     condition = Column(Enum(AccommodationCondition), default=AccommodationCondition.OK, nullable=False)
+    price_per_night = Column(Numeric(10, 2), default=0.0, nullable=False)
     comments = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     type = relationship("AccommodationType", back_populates="accommodations")
+    bookings = relationship("Booking", back_populates="accommodation")

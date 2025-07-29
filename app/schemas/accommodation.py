@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from decimal import Decimal
+from pydantic import BaseModel, Field
 
 from app.models.accommodation import AccommodationStatus, AccommodationCondition
 
@@ -35,6 +36,7 @@ class AccommodationBase(BaseModel):
     number: str
     type_id: int
     capacity: int
+    price_per_night: Decimal = Field(ge=0, description="Price per night must be non-negative")
     status: AccommodationStatus = AccommodationStatus.AVAILABLE
     condition: AccommodationCondition = AccommodationCondition.OK
     comments: Optional[str] = None
@@ -48,6 +50,7 @@ class AccommodationUpdate(BaseModel):
     number: Optional[str] = None
     type_id: Optional[int] = None
     capacity: Optional[int] = None
+    price_per_night: Optional[Decimal] = Field(None, ge=0, description="Price per night must be non-negative")
     status: Optional[AccommodationStatus] = None
     condition: Optional[AccommodationCondition] = None
     comments: Optional[str] = None

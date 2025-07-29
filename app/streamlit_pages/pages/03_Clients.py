@@ -115,6 +115,9 @@ def main():
     if st.sidebar.button("👥 Clients", type="primary"):
         st.switch_page("pages/03_Clients.py")
     
+    if st.sidebar.button("📅 Bookings"):
+        st.switch_page("pages/04_Bookings.py")
+    
     # Check user role for write operations
     user_info = auth.get_user_info()
     is_staff = user_info and user_info.get('role') == 'staff'

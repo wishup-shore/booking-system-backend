@@ -23,6 +23,9 @@ class Client(Base):
     # Relationship to client group
     group_id = Column(Integer, ForeignKey("client_groups.id"), nullable=True)
     group = relationship("ClientGroup", back_populates="clients")
+    
+    # Relationship to bookings
+    bookings = relationship("Booking", back_populates="client")
 
 
 class ClientGroup(Base):

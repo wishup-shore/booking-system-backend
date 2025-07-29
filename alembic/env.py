@@ -5,8 +5,8 @@ from sqlalchemy import pool
 
 from alembic import context
 from app.models.base import Base
-from app.models.accommodation import AccommodationType, Accommodation  
-from app.models.user import User
+# Import all models so alembic can detect them
+from app.models import *
 from app.core.config import settings
 
 # this is the Alembic Config object, which provides

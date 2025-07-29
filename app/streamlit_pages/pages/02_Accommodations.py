@@ -95,6 +95,12 @@ def main():
     if st.sidebar.button("🏨 Accommodations", type="primary"):
         st.switch_page("pages/02_Accommodations.py")
     
+    if st.sidebar.button("👥 Clients"):
+        st.switch_page("pages/03_Clients.py")
+    
+    if st.sidebar.button("📅 Bookings"):
+        st.switch_page("pages/04_Bookings.py")
+    
     # Check user role for write operations
     user_info = auth.get_user_info()
     is_staff = user_info and user_info.get('role') == 'staff'
@@ -117,6 +123,7 @@ def main():
                     "Number": acc["number"],
                     "Type": acc["type"]["name"],
                     "Capacity": acc["capacity"],
+                    "Price/Night": f"${float(acc.get('price_per_night', 0)):.2f}",
                     "Status": acc["status"],
                     "Condition": acc["condition"],
                     "Comments": acc.get("comments", "")[:50] + "..." if acc.get("comments", "") and len(acc.get("comments", "")) > 50 else acc.get("comments", "")
@@ -150,6 +157,11 @@ def main():
                             with col1:
                                 new_number = st.text_input("Number", value=selected_acc["number"])
                                 new_capacity = st.number_input("Capacity", value=selected_acc["capacity"], min_value=1)
+                                new_price = st.number_input("Price per Night ($)", 
+                                                          value=float(selected_acc.get("price_per_night", 0)),
+                                                          min_value=0.0,
+                                                          step=1.0,
+                                                          help="Price in dollars per night")
                                 new_status = st.selectbox("Status", 
                                                         ["available", "occupied", "maintenance", "out_of_order"],
                                                         index=["available", "occupied", "maintenance", "out_of_order"].index(selected_acc["status"]))
@@ -166,6 +178,7 @@ def main():
                                     update_data = {
                                         "number": new_number,
                                         "capacity": new_capacity,
+                                        "price_per_night": new_price,
                                         "status": new_status,
                                         "condition": new_condition,
                                         "comments": new_comments
@@ -264,6 +277,12 @@ def main():
                 capacity = st.number_input("Capacity", 
                                          min_value=1, 
                                          value=selected_type["default_capacity"] if selected_type else 2)
+                
+                price_per_night = st.number_input("Price per Night ($)", 
+                                                min_value=0.0, 
+                                                value=50.0,
+                                                step=1.0,
+                                                help="Price in dollars per night")
             
             with col2:
                 status = st.selectbox("Initial Status", 
@@ -280,6 +299,7 @@ def main():
                         "number": acc_number,
                         "type_id": selected_type["id"],
                         "capacity": capacity,
+                        "price_per_night": price_per_night,
                         "status": status,
                         "condition": condition,
                         "comments": comments or None
