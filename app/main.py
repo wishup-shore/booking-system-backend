@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
-from app.core.config import settings
 from app.models.base import Base
 from app.core.database import engine
 
@@ -11,7 +10,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Booking System API",
     description="Booking system for accommodations",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -32,4 +31,5 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -5,8 +5,9 @@ from sqlalchemy import pool
 
 from alembic import context
 from app.models.base import Base
+
 # Import all models so alembic can detect them
-from app.models import *
+from app.models import *  # NOQA: F403
 from app.core.config import settings
 
 # this is the Alembic Config object, which provides
@@ -69,9 +70,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

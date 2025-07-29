@@ -6,8 +6,13 @@ from app.core.database import get_db
 from app.core.security import get_active_user
 from app.models.user import User, UserRole
 from app.schemas.client import (
-    Client, ClientCreate, ClientUpdate, ClientWithStats,
-    ClientGroup, ClientGroupCreate, ClientGroupUpdate
+    Client,
+    ClientCreate,
+    ClientUpdate,
+    ClientWithStats,
+    ClientGroup,
+    ClientGroupCreate,
+    ClientGroupUpdate,
 )
 from app.services.client_service import ClientService, ClientGroupService
 
@@ -27,7 +32,7 @@ def get_clients(
     limit: int = Query(100, ge=1, le=1000),
     search: Optional[str] = Query(None, description="Search by name, phone, or email"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     service = ClientService(db)
     if search:
@@ -39,7 +44,7 @@ def get_clients(
 def create_client(
     client_data: ClientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientService(db)
     return service.create(client_data)
@@ -49,7 +54,7 @@ def create_client(
 def get_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     service = ClientService(db)
     client = service.get_by_id(client_id)
@@ -63,7 +68,7 @@ def update_client(
     client_id: int,
     client_data: ClientUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientService(db)
     return service.update(client_id, client_data)
@@ -73,7 +78,7 @@ def update_client(
 def delete_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientService(db)
     service.delete(client_id)
@@ -84,17 +89,16 @@ def delete_client(
 def get_client_stats(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     service = ClientService(db)
     return service.get_client_stats(client_id)
 
 
-# Client Group endpoints  
+# Client Group endpoints
 @router.get("/groups/", response_model=List[ClientGroup])
 def get_client_groups(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_active_user)
 ):
     service = ClientGroupService(db)
     return service.get_all()
@@ -104,7 +108,7 @@ def get_client_groups(
 def create_client_group(
     group_data: ClientGroupCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientGroupService(db)
     return service.create(group_data)
@@ -114,7 +118,7 @@ def create_client_group(
 def get_client_group(
     group_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     service = ClientGroupService(db)
     group = service.get_by_id(group_id)
@@ -128,7 +132,7 @@ def update_client_group(
     group_id: int,
     group_data: ClientGroupUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientGroupService(db)
     return service.update(group_id, group_data)
@@ -138,7 +142,7 @@ def update_client_group(
 def delete_client_group(
     group_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = ClientGroupService(db)
     service.delete(group_id)

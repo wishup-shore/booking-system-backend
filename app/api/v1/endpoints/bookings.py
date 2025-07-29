@@ -8,9 +8,17 @@ from app.core.security import get_active_user
 from app.models.user import User, UserRole
 from app.models.booking import BookingStatus
 from app.schemas.booking import (
-    Booking, BookingCreate, BookingCreateOpenDates, BookingUpdate, 
-    BookingSetDates, BookingPayment, BookingCheckIn, BookingCheckOut,
-    BookingWithDetails, CalendarOccupancy, CalendarEvent
+    Booking,
+    BookingCreate,
+    BookingCreateOpenDates,
+    BookingUpdate,
+    BookingSetDates,
+    BookingPayment,
+    BookingCheckIn,
+    BookingCheckOut,
+    BookingWithDetails,
+    CalendarOccupancy,
+    CalendarEvent,
 )
 from app.services.booking_service import BookingService
 from app.services.calendar_service import CalendarService
@@ -29,9 +37,11 @@ def require_staff_role(current_user: User = Depends(get_active_user)):
 def get_bookings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    status: Optional[BookingStatus] = Query(None, description="Filter by booking status"),
+    status: Optional[BookingStatus] = Query(
+        None, description="Filter by booking status"
+    ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get list of bookings with optional status filter"""
     service = BookingService(db)
@@ -44,7 +54,7 @@ def get_bookings(
 def create_booking(
     booking_data: BookingCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Create a new booking"""
     service = BookingService(db)
@@ -55,7 +65,7 @@ def create_booking(
 def get_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get booking details with client and accommodation information"""
     service = BookingService(db)
@@ -70,7 +80,7 @@ def update_booking(
     booking_id: int,
     booking_data: BookingUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Update booking details"""
     service = BookingService(db)
@@ -81,7 +91,7 @@ def update_booking(
 def delete_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Delete booking (only if not checked-in or completed)"""
     service = BookingService(db)
@@ -94,7 +104,7 @@ def delete_booking(
 def create_open_dates_booking(
     booking_data: BookingCreateOpenDates,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Create booking with open dates (flexible dates)"""
     service = BookingService(db)
@@ -106,7 +116,7 @@ def get_open_dates_bookings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get all open-dates bookings for planning"""
     service = BookingService(db)
@@ -118,7 +128,7 @@ def set_booking_dates(
     booking_id: int,
     dates_data: BookingSetDates,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Set dates for an open-dates booking"""
     service = BookingService(db)
@@ -131,7 +141,7 @@ def checkin_booking(
     booking_id: int,
     checkin_data: BookingCheckIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Process check-in for a booking"""
     service = BookingService(db)
@@ -143,7 +153,7 @@ def checkout_booking(
     booking_id: int,
     checkout_data: BookingCheckOut,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Process check-out for a booking"""
     service = BookingService(db)
@@ -155,7 +165,7 @@ def cancel_booking(
     booking_id: int,
     reason: Optional[str] = Query(None, description="Cancellation reason"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Cancel a booking"""
     service = BookingService(db)
@@ -168,7 +178,7 @@ def add_payment(
     booking_id: int,
     payment_data: BookingPayment,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     """Add payment to booking"""
     service = BookingService(db)
@@ -181,15 +191,12 @@ def get_calendar_occupancy(
     start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get calendar occupancy data for date range"""
     if start_date >= end_date:
-        raise HTTPException(
-            status_code=400,
-            detail="End date must be after start date"
-        )
-    
+        raise HTTPException(status_code=400, detail="End date must be after start date")
+
     calendar_service = CalendarService(db)
     return calendar_service.get_occupancy_for_date_range(start_date, end_date)
 
@@ -199,25 +206,24 @@ def get_calendar_events(
     start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get calendar events (bookings) for calendar display"""
     if start_date >= end_date:
-        raise HTTPException(
-            status_code=400,
-            detail="End date must be after start date"
-        )
-    
+        raise HTTPException(status_code=400, detail="End date must be after start date")
+
     calendar_service = CalendarService(db)
     return calendar_service.get_calendar_events(start_date, end_date)
 
 
-@router.get("/calendar/occupancy/{year}/{month}", response_model=List[CalendarOccupancy])
+@router.get(
+    "/calendar/occupancy/{year}/{month}", response_model=List[CalendarOccupancy]
+)
 def get_monthly_occupancy(
     year: int = Path(..., ge=2020, le=2030, description="Year"),
     month: int = Path(..., ge=1, le=12, description="Month (1-12)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get calendar occupancy for a specific month"""
     calendar_service = CalendarService(db)
@@ -229,15 +235,12 @@ def get_occupancy_statistics(
     start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get occupancy statistics for date range"""
     if start_date >= end_date:
-        raise HTTPException(
-            status_code=400,
-            detail="End date must be after start date"
-        )
-    
+        raise HTTPException(status_code=400, detail="End date must be after start date")
+
     calendar_service = CalendarService(db)
     return calendar_service.get_occupancy_statistics(start_date, end_date)
 
@@ -249,27 +252,30 @@ def get_available_accommodations(
     end_date: date = Query(..., description="Check-out date (YYYY-MM-DD)"),
     capacity: Optional[int] = Query(None, ge=1, description="Minimum capacity needed"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Get available accommodations for given dates"""
     if start_date >= end_date:
         raise HTTPException(
-            status_code=400,
-            detail="Check-out date must be after check-in date"
+            status_code=400, detail="Check-out date must be after check-in date"
         )
-    
+
     calendar_service = CalendarService(db)
-    accommodations = calendar_service.get_available_accommodations(start_date, end_date, capacity)
-    
+    accommodations = calendar_service.get_available_accommodations(
+        start_date, end_date, capacity
+    )
+
     # Format response
     return [
         {
-            'id': acc.id,
-            'number': acc.number,
-            'type_name': acc.type.name if acc.type else 'Unknown',
-            'capacity': acc.capacity,
-            'price_per_night': float(acc.price_per_night) if acc.price_per_night else 0.0,
-            'status': acc.status.value
+            "id": acc.id,
+            "number": acc.number,
+            "type_name": acc.type.name if acc.type else "Unknown",
+            "capacity": acc.capacity,
+            "price_per_night": float(acc.price_per_night)
+            if acc.price_per_night
+            else 0.0,
+            "status": acc.status.value,
         }
         for acc in accommodations
     ]
@@ -281,23 +287,22 @@ def check_accommodation_availability(
     start_date: date = Query(..., description="Check-in date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="Check-out date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     """Check if specific accommodation is available for given dates"""
     if start_date >= end_date:
         raise HTTPException(
-            status_code=400,
-            detail="Check-out date must be after check-in date"
+            status_code=400, detail="Check-out date must be after check-in date"
         )
-    
+
     calendar_service = CalendarService(db)
     is_available = calendar_service.check_accommodation_availability(
         accommodation_id, start_date, end_date
     )
-    
+
     return {
-        'accommodation_id': accommodation_id,
-        'start_date': start_date.isoformat(),
-        'end_date': end_date.isoformat(),
-        'is_available': is_available
+        "accommodation_id": accommodation_id,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "is_available": is_available,
     }

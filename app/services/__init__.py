@@ -7,9 +7,9 @@ from .calendar_service import CalendarService
 __all__ = [
     "AuthService",
     "AccommodationTypeService",
-    "AccommodationService", 
+    "AccommodationService",
     "ClientService",
     "ClientGroupService",
     "BookingService",
-    "CalendarService"
+    "CalendarService",
 ]

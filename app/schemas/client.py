@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr
+from typing import Optional, List, Dict
+from pydantic import BaseModel
 
 
 class ClientGroupBase(BaseModel):
@@ -18,7 +18,7 @@ class ClientGroupUpdate(BaseModel):
 class ClientGroup(ClientGroupBase):
     id: int
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -29,7 +29,7 @@ class ClientBase(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     social_links: Optional[Dict[str, str]] = None  # {"vk": "link", "instagram": "link"}
-    car_numbers: Optional[List[str]] = None       # ["A123BC78", "B456DE99"]
+    car_numbers: Optional[List[str]] = None  # ["A123BC78", "B456DE99"]
     photo_url: Optional[str] = None
     rating: Optional[float] = 0.0
     comments: Optional[str] = None
@@ -57,12 +57,13 @@ class Client(ClientBase):
     id: int
     created_at: datetime
     group: Optional[ClientGroup] = None
-    
+
     class Config:
         from_attributes = True
 
 
 class ClientWithStats(Client):
     """Client model with additional statistics"""
+
     visits_count: int = 0
     total_spent: float = 0.0

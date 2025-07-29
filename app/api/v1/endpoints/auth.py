@@ -11,34 +11,28 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=Token)
-def login(
-    login_data: LoginRequest,
-    db: Session = Depends(get_db)
-):
+def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     auth_service = AuthService(db)
     result = auth_service.login(login_data)
-    
-    return {
-        "access_token": result["access_token"],
-        "token_type": result["token_type"]
-    }
+
+    return {"access_token": result["access_token"], "token_type": result["token_type"]}
 
 
 @router.post("/register")
 def register(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    current_user: User = Depends(get_active_user),
 ):
     if current_user.role.value != "staff":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only staff can create new users"
+            detail="Only staff can create new users",
         )
-    
+
     auth_service = AuthService(db)
     new_user = auth_service.create_user(user_data)
-    
+
     return {"message": "User created successfully", "user_id": new_user.id}
 
 
@@ -49,5 +43,5 @@ def get_current_user_info(current_user: User = Depends(get_active_user)):
         "username": current_user.username,
         "email": current_user.email,
         "role": current_user.role.value,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
     }

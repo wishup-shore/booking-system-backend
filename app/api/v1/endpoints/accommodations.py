@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_active_user
 from app.models.user import User, UserRole
-from app.schemas.accommodation import Accommodation, AccommodationCreate, AccommodationUpdate
+from app.schemas.accommodation import (
+    Accommodation,
+    AccommodationCreate,
+    AccommodationUpdate,
+)
 from app.services.accommodation_service import AccommodationService
 
 router = APIRouter()
@@ -19,8 +23,7 @@ def require_staff_role(current_user: User = Depends(get_active_user)):
 
 @router.get("/", response_model=List[Accommodation])
 def get_accommodations(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_active_user)
 ):
     service = AccommodationService(db)
     return service.get_all()
@@ -30,7 +33,7 @@ def get_accommodations(
 def create_accommodation(
     accommodation_data: AccommodationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
     return service.create(accommodation_data)
@@ -41,7 +44,7 @@ def update_accommodation(
     accommodation_id: int,
     accommodation_data: AccommodationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
     return service.update(accommodation_id, accommodation_data)
@@ -51,7 +54,7 @@ def update_accommodation(
 def delete_accommodation(
     accommodation_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_staff_role)
+    current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
     service.delete(accommodation_id)

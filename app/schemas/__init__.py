@@ -1,6 +1,21 @@
 from .user import User, UserCreate, UserUpdate
-from .accommodation import AccommodationType, AccommodationTypeCreate, AccommodationTypeUpdate, Accommodation, AccommodationCreate, AccommodationUpdate
-from .client import Client, ClientCreate, ClientUpdate, ClientGroup, ClientGroupCreate, ClientGroupUpdate, ClientWithStats
+from .accommodation import (
+    AccommodationType,
+    AccommodationTypeCreate,
+    AccommodationTypeUpdate,
+    Accommodation,
+    AccommodationCreate,
+    AccommodationUpdate,
+)
+from .client import (
+    Client,
+    ClientCreate,
+    ClientUpdate,
+    ClientGroup,
+    ClientGroupCreate,
+    ClientGroupUpdate,
+    ClientWithStats,
+)
 from .booking import (
     Booking,
     BookingCreate,
@@ -12,20 +27,39 @@ from .booking import (
     BookingCheckOut,
     BookingWithDetails,
     CalendarOccupancy,
-    CalendarEvent
+    CalendarEvent,
 )
 
 __all__ = [
     # User schemas
-    "User", "UserCreate", "UserUpdate",
+    "User",
+    "UserCreate",
+    "UserUpdate",
     # Accommodation schemas
-    "AccommodationType", "AccommodationTypeCreate", "AccommodationTypeUpdate",
-    "Accommodation", "AccommodationCreate", "AccommodationUpdate",
+    "AccommodationType",
+    "AccommodationTypeCreate",
+    "AccommodationTypeUpdate",
+    "Accommodation",
+    "AccommodationCreate",
+    "AccommodationUpdate",
     # Client schemas
-    "Client", "ClientCreate", "ClientUpdate",
-    "ClientGroup", "ClientGroupCreate", "ClientGroupUpdate", "ClientWithStats",
+    "Client",
+    "ClientCreate",
+    "ClientUpdate",
+    "ClientGroup",
+    "ClientGroupCreate",
+    "ClientGroupUpdate",
+    "ClientWithStats",
     # Booking schemas
-    "Booking", "BookingCreate", "BookingCreateOpenDates", "BookingUpdate",
-    "BookingSetDates", "BookingPayment", "BookingCheckIn", "BookingCheckOut",
-    "BookingWithDetails", "CalendarOccupancy", "CalendarEvent"
+    "Booking",
+    "BookingCreate",
+    "BookingCreateOpenDates",
+    "BookingUpdate",
+    "BookingSetDates",
+    "BookingPayment",
+    "BookingCheckIn",
+    "BookingCheckOut",
+    "BookingWithDetails",
+    "CalendarOccupancy",
+    "CalendarEvent",
 ]
