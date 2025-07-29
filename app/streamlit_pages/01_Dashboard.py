@@ -27,6 +27,9 @@ def main():
     if st.sidebar.button("🏨 Accommodations"):
         st.switch_page("pages/02_Accommodations.py")
     
+    if st.sidebar.button("👥 Clients"):
+        st.switch_page("pages/03_Clients.py")
+    
     # Main dashboard content
     st.header("Welcome to the Booking System")
     
@@ -64,13 +67,17 @@ def main():
     # Quick actions
     st.subheader("Quick Actions")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("📝 Manage Accommodations", type="primary"):
             st.switch_page("pages/02_Accommodations.py")
     
     with col2:
+        if st.button("👥 Manage Clients", type="primary"):
+            st.switch_page("pages/03_Clients.py")
+    
+    with col3:
         if st.button("🔧 System Settings"):
             st.info("Settings page coming in future iterations")
     
