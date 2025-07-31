@@ -48,3 +48,12 @@ def update_accommodation_type(
 ):
     service = AccommodationTypeService(db)
     return service.update(accommodation_type_id, accommodation_type_data)
+
+@router.delete("/{accommodation_type_id}")
+def delete_accommodation_type(
+    accommodation_type_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_staff_role),
+):
+    service = AccommodationTypeService(db)
+    return service.delete(accommodation_type_id)

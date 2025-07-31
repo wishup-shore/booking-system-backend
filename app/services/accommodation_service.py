@@ -55,6 +55,18 @@ class AccommodationTypeService:
         self.db.commit()
         self.db.refresh(db_accommodation_type)
         return db_accommodation_type
+    
+    def delete(self, accommodation_type_id: int) -> bool:
+        db_accommodation_type = self.get_by_id(accommodation_type_id)
+        if not db_accommodation_type:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Accommodation type not found",
+            )
+
+        self.db.delete(db_accommodation_type)
+        self.db.commit()
+        return True
 
 
 class AccommodationService:
