@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,33 @@ class BookingCreateOpenDates(BaseModel):
     )
     comments: Optional[str] = None
     is_open_dates: bool = True
+
+
+class BookingInventoryItem(BaseModel):
+    """Schema for inventory items to be added to booking"""
+
+    inventory_item_id: int
+
+
+class BookingCustomItemRequest(BaseModel):
+    """Schema for custom items to be added to booking"""
+
+    custom_item_id: int
+    quantity: int = Field(gt=0, description="Quantity must be greater than 0")
+
+
+class BookingCreateWithItems(BookingBase):
+    """Schema for creating bookings with inventory and custom items"""
+
+    inventory_items: List[BookingInventoryItem] = []
+    custom_items: List[BookingCustomItemRequest] = []
+
+
+class BookingCreateOpenDatesWithItems(BookingCreateOpenDates):
+    """Schema for creating open-dates bookings with inventory and custom items"""
+
+    inventory_items: List[BookingInventoryItem] = []
+    custom_items: List[BookingCustomItemRequest] = []
 
 
 class BookingUpdate(BaseModel):
@@ -94,6 +121,20 @@ class BookingWithDetails(Booking):
 
     client: Optional[dict] = None  # Will be populated with client data
     accommodation: Optional[dict] = None  # Will be populated with accommodation data
+
+
+class BookingWithItems(Booking):
+    """Booking model with inventory and custom items"""
+
+    inventory_items: List[dict] = []  # Will be populated with inventory data
+    custom_items: List[dict] = []  # Will be populated with custom items data
+
+
+class BookingWithFullDetails(BookingWithDetails):
+    """Booking model with all details including items"""
+
+    inventory_items: List[dict] = []  # Will be populated with inventory data
+    custom_items: List[dict] = []  # Will be populated with custom items data
 
 
 class CalendarOccupancy(BaseModel):

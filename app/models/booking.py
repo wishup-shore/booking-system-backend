@@ -64,3 +64,5 @@ class Booking(Base):
     # Relationships
     client = relationship("Client", back_populates="bookings")
     accommodation = relationship("Accommodation", back_populates="bookings")
+    inventory_items = relationship("BookingInventory", back_populates="booking")
+    custom_items = relationship("BookingCustomItem", back_populates="booking")

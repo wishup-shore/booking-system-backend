@@ -1,7 +1,8 @@
 from typing import List, Dict, Optional, Tuple
 from datetime import date, timedelta
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select, and_, or_, func
 
 from app.models.booking import Booking, BookingStatus
 from app.models.accommodation import Accommodation
@@ -9,10 +10,12 @@ from app.schemas.booking import CalendarOccupancy, CalendarEvent
 
 
 class CalendarService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_occupancy_for_month(self, year: int, month: int) -> List[CalendarOccupancy]:
+    async def get_occupancy_for_month(
+        self, year: int, month: int
+    ) -> List[CalendarOccupancy]:
         """Get occupancy data for a specific month"""
         # Create date range for the month
         start_date = date(year, month, 1)
@@ -21,25 +24,26 @@ class CalendarService:
         else:
             end_date = date(year, month + 1, 1) - timedelta(days=1)
 
-        return self.get_occupancy_for_date_range(start_date, end_date)
+        return await self.get_occupancy_for_date_range(start_date, end_date)
 
-    def get_occupancy_for_date_range(
+    async def get_occupancy_for_date_range(
         self, start_date: date, end_date: date
     ) -> List[CalendarOccupancy]:
         """Get occupancy data for a date range"""
         # Get all accommodations
-        accommodations = (
-            self.db.query(Accommodation).options(joinedload(Accommodation.type)).all()
+        accommodations_stmt = select(Accommodation).options(
+            selectinload(Accommodation.type)
         )
+        accommodations_result = await self.db.execute(accommodations_stmt)
+        accommodations = accommodations_result.scalars().all()
 
         # Get all bookings in the date range
-        bookings = (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
-            .filter(
+        bookings_stmt = (
+            select(Booking)
+            .options(selectinload(Booking.client), selectinload(Booking.accommodation))
+            .where(
                 and_(
-                    Booking.is_open_dates
-                    == False,  # Only bookings with confirmed dates
+                    not Booking.is_open_dates,  # Only bookings with confirmed dates
                     Booking.status.in_(
                         [
                             BookingStatus.CONFIRMED,
@@ -63,8 +67,9 @@ class CalendarService:
                     ),
                 )
             )
-            .all()
         )
+        bookings_result = await self.db.execute(bookings_stmt)
+        bookings = bookings_result.scalars().all()
 
         # Build occupancy data for each date
         occupancy_data = []
@@ -123,20 +128,19 @@ class CalendarService:
 
         return occupancy_data
 
-    def get_calendar_events(
+    async def get_calendar_events(
         self, start_date: date, end_date: date
     ) -> List[CalendarEvent]:
         """Get calendar events (bookings) for calendar display"""
-        bookings = (
-            self.db.query(Booking)
+        bookings_stmt = (
+            select(Booking)
             .options(
-                joinedload(Booking.client),
-                joinedload(Booking.accommodation).joinedload(Accommodation.type),
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
             )
-            .filter(
+            .where(
                 and_(
-                    Booking.is_open_dates
-                    == False,  # Only bookings with confirmed dates
+                    not Booking.is_open_dates,  # Only bookings with confirmed dates
                     Booking.status.in_(
                         [
                             BookingStatus.CONFIRMED,
@@ -160,8 +164,9 @@ class CalendarService:
                     ),
                 )
             )
-            .all()
         )
+        bookings_result = await self.db.execute(bookings_stmt)
+        bookings = bookings_result.scalars().all()
 
         events = []
         for booking in bookings:
@@ -180,7 +185,7 @@ class CalendarService:
 
         return events
 
-    def check_accommodation_availability(
+    async def check_accommodation_availability(
         self,
         accommodation_id: int,
         start_date: date,
@@ -188,62 +193,66 @@ class CalendarService:
         exclude_booking_id: Optional[int] = None,
     ) -> bool:
         """Check if a specific accommodation is available for given dates"""
-        query = self.db.query(Booking).filter(
-            and_(
-                Booking.accommodation_id == accommodation_id,
-                Booking.is_open_dates == False,  # Only bookings with confirmed dates
-                Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
-                or_(
-                    and_(
-                        Booking.check_in_date <= end_date,
-                        Booking.check_out_date >= start_date,
-                    ),
-                    and_(
-                        Booking.check_in_date >= start_date,
-                        Booking.check_in_date <= end_date,
-                    ),
-                    and_(
-                        Booking.check_out_date >= start_date,
-                        Booking.check_out_date <= end_date,
-                    ),
+        conditions = [
+            Booking.accommodation_id == accommodation_id,
+            not Booking.is_open_dates,  # Only bookings with confirmed dates
+            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+            or_(
+                and_(
+                    Booking.check_in_date <= end_date,
+                    Booking.check_out_date >= start_date,
                 ),
-            )
-        )
+                and_(
+                    Booking.check_in_date >= start_date,
+                    Booking.check_in_date <= end_date,
+                ),
+                and_(
+                    Booking.check_out_date >= start_date,
+                    Booking.check_out_date <= end_date,
+                ),
+            ),
+        ]
 
         if exclude_booking_id:
-            query = query.filter(Booking.id != exclude_booking_id)
+            conditions.append(Booking.id != exclude_booking_id)
 
-        return query.count() == 0
+        stmt = select(func.count(Booking.id)).where(and_(*conditions))
+        result = await self.db.execute(stmt)
+        count = result.scalar()
+        return count == 0
 
-    def get_available_accommodations(
+    async def get_available_accommodations(
         self, start_date: date, end_date: date, capacity_needed: Optional[int] = None
     ) -> List[Accommodation]:
         """Get all accommodations available for given dates"""
         # Get all accommodations that meet capacity requirements
-        accommodations_query = self.db.query(Accommodation).options(
-            joinedload(Accommodation.type)
+        accommodations_stmt = select(Accommodation).options(
+            selectinload(Accommodation.type)
         )
 
         if capacity_needed:
-            accommodations_query = accommodations_query.filter(
+            accommodations_stmt = accommodations_stmt.where(
                 Accommodation.capacity >= capacity_needed
             )
 
-        all_accommodations = accommodations_query.all()
+        accommodations_result = await self.db.execute(accommodations_stmt)
+        all_accommodations = accommodations_result.scalars().all()
 
         # Filter out accommodations that are booked during the requested period
         available_accommodations = []
         for accommodation in all_accommodations:
-            if self.check_accommodation_availability(
+            if await self.check_accommodation_availability(
                 accommodation.id, start_date, end_date
             ):
                 available_accommodations.append(accommodation)
 
         return available_accommodations
 
-    def get_occupancy_statistics(self, start_date: date, end_date: date) -> Dict:
+    async def get_occupancy_statistics(self, start_date: date, end_date: date) -> Dict:
         """Get occupancy statistics for a date range"""
-        total_accommodations = self.db.query(Accommodation).count()
+        total_accommodations_stmt = select(func.count(Accommodation.id))
+        total_accommodations_result = await self.db.execute(total_accommodations_stmt)
+        total_accommodations = total_accommodations_result.scalar()
 
         if total_accommodations == 0:
             return {
@@ -259,12 +268,12 @@ class CalendarService:
         total_nights = total_accommodations * total_days
 
         # Get bookings in the date range
-        bookings = (
-            self.db.query(Booking)
-            .options(joinedload(Booking.accommodation))
-            .filter(
+        bookings_stmt = (
+            select(Booking)
+            .options(selectinload(Booking.accommodation))
+            .where(
                 and_(
-                    Booking.is_open_dates == False,
+                    not Booking.is_open_dates,
                     Booking.status.in_(
                         [
                             BookingStatus.CONFIRMED,
@@ -288,8 +297,9 @@ class CalendarService:
                     ),
                 )
             )
-            .all()
         )
+        bookings_result = await self.db.execute(bookings_stmt)
+        bookings = bookings_result.scalars().all()
 
         occupied_nights = 0
         total_revenue = 0.0
@@ -321,27 +331,28 @@ class CalendarService:
             "revenue": round(total_revenue, 2),
         }
 
-    def get_accommodation_schedule(
+    async def get_accommodation_schedule(
         self, accommodation_id: int, start_date: date, end_date: date
     ) -> List[Dict]:
         """Get detailed schedule for a specific accommodation"""
-        accommodation = (
-            self.db.query(Accommodation)
-            .options(joinedload(Accommodation.type))
-            .filter(Accommodation.id == accommodation_id)
-            .first()
+        accommodation_stmt = (
+            select(Accommodation)
+            .options(selectinload(Accommodation.type))
+            .where(Accommodation.id == accommodation_id)
         )
+        accommodation_result = await self.db.execute(accommodation_stmt)
+        accommodation = accommodation_result.scalar_one_or_none()
 
         if not accommodation:
             return []
 
-        bookings = (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client))
-            .filter(
+        bookings_stmt = (
+            select(Booking)
+            .options(selectinload(Booking.client))
+            .where(
                 and_(
                     Booking.accommodation_id == accommodation_id,
-                    Booking.is_open_dates == False,
+                    not Booking.is_open_dates,
                     Booking.status.in_(
                         [
                             BookingStatus.CONFIRMED,
@@ -366,8 +377,9 @@ class CalendarService:
                 )
             )
             .order_by(Booking.check_in_date)
-            .all()
         )
+        bookings_result = await self.db.execute(bookings_stmt)
+        bookings = bookings_result.scalars().all()
 
         schedule = []
         for booking in bookings:
@@ -390,17 +402,17 @@ class CalendarService:
 
         return schedule
 
-    def find_next_available_slot(
+    async def find_next_available_slot(
         self, accommodation_id: int, after_date: date, min_nights: int = 1
     ) -> Optional[Tuple[date, date]]:
         """Find the next available slot for an accommodation after a given date"""
         # Get bookings for this accommodation after the given date
-        bookings = (
-            self.db.query(Booking)
-            .filter(
+        bookings_stmt = (
+            select(Booking)
+            .where(
                 and_(
                     Booking.accommodation_id == accommodation_id,
-                    Booking.is_open_dates == False,
+                    not Booking.is_open_dates,
                     Booking.status.in_(
                         [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]
                     ),
@@ -408,8 +420,9 @@ class CalendarService:
                 )
             )
             .order_by(Booking.check_in_date)
-            .all()
         )
+        bookings_result = await self.db.execute(bookings_stmt)
+        bookings = bookings_result.scalars().all()
 
         current_date = after_date
 

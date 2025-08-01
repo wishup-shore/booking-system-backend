@@ -1,7 +1,6 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
-from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_, func
 
 from app.models.client import Client, ClientGroup
 from app.schemas.client import (
@@ -11,78 +10,81 @@ from app.schemas.client import (
     ClientGroupCreate,
     ClientGroupUpdate,
 )
+from app.core.service_utils import ensure_exists, ensure_no_related_records
+from app.core.exceptions import ValidationError
 
 
 class ClientGroupService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_all(self) -> List[ClientGroup]:
-        return self.db.query(ClientGroup).all()
+    async def get_all(self) -> List[ClientGroup]:
+        stmt = select(ClientGroup)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
-    def get_by_id(self, group_id: int) -> Optional[ClientGroup]:
-        return self.db.query(ClientGroup).filter(ClientGroup.id == group_id).first()
+    async def get_by_id(self, group_id: int) -> Optional[ClientGroup]:
+        stmt = select(ClientGroup).where(ClientGroup.id == group_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def create(self, group_data: ClientGroupCreate) -> ClientGroup:
+    async def create(self, group_data: ClientGroupCreate) -> ClientGroup:
         db_group = ClientGroup(**group_data.model_dump())
         self.db.add(db_group)
-        self.db.commit()
-        self.db.refresh(db_group)
+        await self.db.commit()
+        await self.db.refresh(db_group)
         return db_group
 
-    def update(self, group_id: int, group_data: ClientGroupUpdate) -> ClientGroup:
-        db_group = self.get_by_id(group_id)
-        if not db_group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Client group not found"
-            )
+    async def update(self, group_id: int, group_data: ClientGroupUpdate) -> ClientGroup:
+        db_group = await self.get_by_id(group_id)
+        db_group = ensure_exists(db_group, "Client group", group_id)
 
         update_data = group_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_group, field, value)
 
-        self.db.commit()
-        self.db.refresh(db_group)
+        await self.db.commit()
+        await self.db.refresh(db_group)
         return db_group
 
-    def delete(self, group_id: int) -> bool:
-        db_group = self.get_by_id(group_id)
-        if not db_group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Client group not found"
-            )
+    async def delete(self, group_id: int) -> bool:
+        db_group = await self.get_by_id(group_id)
+        db_group = ensure_exists(db_group, "Client group", group_id)
 
         # Check if group has clients
-        clients_count = (
-            self.db.query(Client).filter(Client.group_id == group_id).count()
+        clients_count_stmt = select(func.count(Client.id)).where(
+            Client.group_id == group_id
         )
-        if clients_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete group with existing clients",
-            )
+        clients_count_result = await self.db.execute(clients_count_stmt)
+        clients_count = clients_count_result.scalar()
 
-        self.db.delete(db_group)
-        self.db.commit()
+        ensure_no_related_records(clients_count or 0, "Client group", "clients")
+
+        await self.db.delete(db_group)
+        await self.db.commit()
         return True
 
 
 class ClientService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[Client]:
-        return self.db.query(Client).offset(skip).limit(limit).all()
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[Client]:
+        stmt = select(Client).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
-    def get_by_id(self, client_id: int) -> Optional[Client]:
-        return self.db.query(Client).filter(Client.id == client_id).first()
+    async def get_by_id(self, client_id: int) -> Optional[Client]:
+        stmt = select(Client).where(Client.id == client_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def search_clients(
+    async def search_clients(
         self, query: str, skip: int = 0, limit: int = 100
     ) -> List[Client]:
         """Search clients by name, phone, or email"""
         if not query:
-            return self.get_all(skip, limit)
+            return await self.get_all(skip, limit)
 
         search_filter = or_(
             func.lower(Client.first_name).contains(query.lower()),
@@ -91,86 +93,71 @@ class ClientService:
             func.lower(Client.email).contains(query.lower()),
         )
 
-        return (
-            self.db.query(Client).filter(search_filter).offset(skip).limit(limit).all()
-        )
+        stmt = select(Client).where(search_filter).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
-    def get_by_phone(self, phone: str) -> Optional[Client]:
-        return self.db.query(Client).filter(Client.phone == phone).first()
+    async def get_by_phone(self, phone: str) -> Optional[Client]:
+        stmt = select(Client).where(Client.phone == phone)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_by_email(self, email: str) -> Optional[Client]:
-        return self.db.query(Client).filter(Client.email == email).first()
+    async def get_by_email(self, email: str) -> Optional[Client]:
+        stmt = select(Client).where(Client.email == email)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def create(self, client_data: ClientCreate) -> Client:
+    async def create(self, client_data: ClientCreate) -> Client:
         # Check for duplicate phone/email if provided
-        if client_data.phone and self.get_by_phone(client_data.phone):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Client with this phone number already exists",
-            )
+        if client_data.phone and await self.get_by_phone(client_data.phone):
+            raise ValidationError("Client with this phone number already exists")
 
-        if client_data.email and self.get_by_email(client_data.email):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Client with this email already exists",
-            )
+        if client_data.email and await self.get_by_email(client_data.email):
+            raise ValidationError("Client with this email already exists")
 
         db_client = Client(**client_data.model_dump())
         self.db.add(db_client)
-        self.db.commit()
-        self.db.refresh(db_client)
+        await self.db.commit()
+        await self.db.refresh(db_client)
         return db_client
 
-    def update(self, client_id: int, client_data: ClientUpdate) -> Client:
-        db_client = self.get_by_id(client_id)
-        if not db_client:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Client not found"
-            )
+    async def update(self, client_id: int, client_data: ClientUpdate) -> Client:
+        db_client = await self.get_by_id(client_id)
+        db_client = ensure_exists(db_client, "Client", client_id)
 
         # Check for duplicate phone/email if being updated
         if client_data.phone and client_data.phone != db_client.phone:
-            existing_client = self.get_by_phone(client_data.phone)
+            existing_client = await self.get_by_phone(client_data.phone)
             if existing_client and existing_client.id != client_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Another client with this phone number already exists",
+                raise ValidationError(
+                    "Another client with this phone number already exists"
                 )
 
         if client_data.email and client_data.email != db_client.email:
-            existing_client = self.get_by_email(client_data.email)
+            existing_client = await self.get_by_email(client_data.email)
             if existing_client and existing_client.id != client_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Another client with this email already exists",
-                )
+                raise ValidationError("Another client with this email already exists")
 
         update_data = client_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_client, field, value)
 
-        self.db.commit()
-        self.db.refresh(db_client)
+        await self.db.commit()
+        await self.db.refresh(db_client)
         return db_client
 
-    def delete(self, client_id: int) -> bool:
-        db_client = self.get_by_id(client_id)
-        if not db_client:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Client not found"
-            )
+    async def delete(self, client_id: int) -> bool:
+        db_client = await self.get_by_id(client_id)
+        db_client = ensure_exists(db_client, "Client", client_id)
 
-        self.db.delete(db_client)
-        self.db.commit()
+        await self.db.delete(db_client)
+        await self.db.commit()
         return True
 
-    def get_client_stats(self, client_id: int) -> ClientWithStats:
+    async def get_client_stats(self, client_id: int) -> ClientWithStats:
         """Get client with basic statistics"""
-        db_client = self.get_by_id(client_id)
-        if not db_client:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Client not found"
-            )
+        db_client = await self.get_by_id(client_id)
+        db_client = ensure_exists(db_client, "Client", client_id)
 
         # For now, return zero stats since we don't have bookings yet
         # This will be updated in iteration 3 when booking system is implemented

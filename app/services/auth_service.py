@@ -1,6 +1,7 @@
 from datetime import timedelta
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_
 from fastapi import HTTPException, status
 
 from app.models.user import User
@@ -10,19 +11,22 @@ from app.core.config import settings
 
 
 class AuthService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def authenticate_user(self, username: str, password: str) -> Optional[User]:
-        user = self.db.query(User).filter(User.username == username).first()
+    async def authenticate_user(self, username: str, password: str) -> Optional[User]:
+        stmt = select(User).where(User.username == username)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+
         if not user:
             return None
         if not verify_password(password, user.hashed_password):
             return None
         return user
 
-    def login(self, login_data: LoginRequest) -> dict:
-        user = self.authenticate_user(login_data.username, login_data.password)
+    async def login(self, login_data: LoginRequest) -> dict:
+        user = await self.authenticate_user(login_data.username, login_data.password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -42,14 +46,12 @@ class AuthService:
 
         return {"access_token": access_token, "token_type": "bearer", "user": user}
 
-    def create_user(self, user_data: UserCreate) -> User:
-        existing_user = (
-            self.db.query(User)
-            .filter(
-                (User.username == user_data.username) | (User.email == user_data.email)
-            )
-            .first()
+    async def create_user(self, user_data: UserCreate) -> User:
+        stmt = select(User).where(
+            or_(User.username == user_data.username, User.email == user_data.email)
         )
+        result = await self.db.execute(stmt)
+        existing_user = result.scalar_one_or_none()
 
         if existing_user:
             raise HTTPException(
@@ -67,6 +69,6 @@ class AuthService:
         )
 
         self.db.add(db_user)
-        self.db.commit()
-        self.db.refresh(db_user)
+        await self.db.commit()
+        await self.db.refresh(db_user)
         return db_user

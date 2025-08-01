@@ -1,8 +1,9 @@
 from typing import List, Optional
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select, and_, or_, func
 from fastapi import HTTPException, status
 
 from app.models.booking import Booking, BookingStatus, PaymentStatus
@@ -11,70 +12,98 @@ from app.models.accommodation import Accommodation
 from app.schemas.booking import (
     BookingCreate,
     BookingCreateOpenDates,
+    BookingCreateWithItems,
+    BookingCreateOpenDatesWithItems,
     BookingUpdate,
     BookingSetDates,
     BookingPayment,
     BookingCheckIn,
     BookingCheckOut,
     BookingWithDetails,
+    BookingWithItems,
+    BookingWithFullDetails,
 )
+from app.models.inventory import InventoryItem, BookingInventory
+from app.models.custom_item import BookingCustomItem
+from app.services.inventory_service import InventoryService
+from app.services.custom_item_service import CustomItemService
 
 
 class BookingService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[Booking]:
-        return (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[Booking]:
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
             .offset(skip)
             .limit(limit)
-            .all()
         )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_by_id(self, booking_id: int) -> Optional[Booking]:
-        return (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
-            .filter(Booking.id == booking_id)
-            .first()
+    async def get_by_id(self, booking_id: int) -> Optional[Booking]:
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(Booking.id == booking_id)
         )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_by_status(
+    async def get_by_status(
         self, status: BookingStatus, skip: int = 0, limit: int = 100
     ) -> List[Booking]:
-        return (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
-            .filter(Booking.status == status)
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(Booking.status == status)
             .offset(skip)
             .limit(limit)
-            .all()
         )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_open_dates_bookings(self, skip: int = 0, limit: int = 100) -> List[Booking]:
+    async def get_open_dates_bookings(
+        self, skip: int = 0, limit: int = 100
+    ) -> List[Booking]:
         """Get all bookings with open dates"""
-        return (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
-            .filter(Booking.is_open_dates == True)
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(Booking.is_open_dates)
             .offset(skip)
             .limit(limit)
-            .all()
         )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_bookings_by_date_range(
+    async def get_bookings_by_date_range(
         self, start_date: date, end_date: date
     ) -> List[Booking]:
         """Get bookings within a date range"""
-        return (
-            self.db.query(Booking)
-            .options(joinedload(Booking.client), joinedload(Booking.accommodation))
-            .filter(
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(
                 and_(
-                    Booking.is_open_dates
-                    == False,  # Only bookings with confirmed dates
+                    not Booking.is_open_dates,  # Only bookings with confirmed dates
                     or_(
                         and_(
                             Booking.check_in_date <= end_date,
@@ -91,10 +120,11 @@ class BookingService:
                     ),
                 )
             )
-            .all()
         )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def check_availability(
+    async def check_availability(
         self,
         accommodation_id: int,
         check_in: date,
@@ -102,49 +132,50 @@ class BookingService:
         exclude_booking_id: Optional[int] = None,
     ) -> bool:
         """Check if accommodation is available for given dates"""
-        query = self.db.query(Booking).filter(
-            and_(
-                Booking.accommodation_id == accommodation_id,
-                Booking.is_open_dates == False,  # Only bookings with confirmed dates
-                Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
-                or_(
-                    and_(
-                        Booking.check_in_date <= check_out,
-                        Booking.check_out_date >= check_in,
-                    ),
-                    and_(
-                        Booking.check_in_date >= check_in,
-                        Booking.check_in_date <= check_out,
-                    ),
-                    and_(
-                        Booking.check_out_date >= check_in,
-                        Booking.check_out_date <= check_out,
-                    ),
+        conditions = [
+            Booking.accommodation_id == accommodation_id,
+            not Booking.is_open_dates,  # Only bookings with confirmed dates
+            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+            or_(
+                and_(
+                    Booking.check_in_date <= check_out,
+                    Booking.check_out_date >= check_in,
                 ),
-            )
-        )
+                and_(
+                    Booking.check_in_date >= check_in,
+                    Booking.check_in_date <= check_out,
+                ),
+                and_(
+                    Booking.check_out_date >= check_in,
+                    Booking.check_out_date <= check_out,
+                ),
+            ),
+        ]
 
         if exclude_booking_id:
-            query = query.filter(Booking.id != exclude_booking_id)
+            conditions.append(Booking.id != exclude_booking_id)
 
-        return query.count() == 0
+        stmt = select(func.count(Booking.id)).where(and_(*conditions))
+        result = await self.db.execute(stmt)
+        count = result.scalar()
+        return count == 0
 
-    def create(self, booking_data: BookingCreate) -> Booking:
+    async def create(self, booking_data: BookingCreate) -> Booking:
         # Validate client exists
-        client = (
-            self.db.query(Client).filter(Client.id == booking_data.client_id).first()
-        )
+        client_stmt = select(Client).where(Client.id == booking_data.client_id)
+        client_result = await self.db.execute(client_stmt)
+        client = client_result.scalar_one_or_none()
         if not client:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Client not found"
             )
 
         # Validate accommodation exists
-        accommodation = (
-            self.db.query(Accommodation)
-            .filter(Accommodation.id == booking_data.accommodation_id)
-            .first()
+        accommodation_stmt = select(Accommodation).where(
+            Accommodation.id == booking_data.accommodation_id
         )
+        accommodation_result = await self.db.execute(accommodation_stmt)
+        accommodation = accommodation_result.scalar_one_or_none()
         if not accommodation:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Accommodation not found"
@@ -164,7 +195,7 @@ class BookingService:
                     detail="Check-out date must be after check-in date",
                 )
 
-            if not self.check_availability(
+            if not await self.check_availability(
                 accommodation.id,
                 booking_data.check_in_date,
                 booking_data.check_out_date,
@@ -188,11 +219,11 @@ class BookingService:
         )
 
         self.db.add(db_booking)
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def create_open_dates(self, booking_data: BookingCreateOpenDates) -> Booking:
+    async def create_open_dates(self, booking_data: BookingCreateOpenDates) -> Booking:
         """Create an open-dates booking"""
         regular_booking_data = BookingCreate(
             **booking_data.model_dump(),
@@ -200,10 +231,10 @@ class BookingService:
             check_out_date=None,
             is_open_dates=True,
         )
-        return self.create(regular_booking_data)
+        return await self.create(regular_booking_data)
 
-    def update(self, booking_id: int, booking_data: BookingUpdate) -> Booking:
-        db_booking = self.get_by_id(booking_id)
+    async def update(self, booking_id: int, booking_data: BookingUpdate) -> Booking:
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -226,7 +257,7 @@ class BookingService:
                     detail="Check-out date must be after check-in date",
                 )
 
-            if not self.check_availability(
+            if not await self.check_availability(
                 new_accommodation_id, new_check_in, new_check_out, booking_id
             ):
                 raise HTTPException(
@@ -245,22 +276,22 @@ class BookingService:
             or booking_data.check_out_date is not None
             or booking_data.accommodation_id is not None
         ) and not db_booking.is_open_dates:
-            accommodation = (
-                self.db.query(Accommodation)
-                .filter(Accommodation.id == db_booking.accommodation_id)
-                .first()
+            accommodation_stmt = select(Accommodation).where(
+                Accommodation.id == db_booking.accommodation_id
             )
+            accommodation_result = await self.db.execute(accommodation_stmt)
+            accommodation = accommodation_result.scalar_one_or_none()
             if accommodation and db_booking.check_in_date and db_booking.check_out_date:
                 nights = (db_booking.check_out_date - db_booking.check_in_date).days
                 db_booking.total_amount = accommodation.price_per_night * nights
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def set_dates(self, booking_id: int, dates_data: BookingSetDates) -> Booking:
+    async def set_dates(self, booking_id: int, dates_data: BookingSetDates) -> Booking:
         """Set dates for an open-dates booking"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -279,7 +310,7 @@ class BookingService:
             )
 
         # Check availability
-        if not self.check_availability(
+        if not await self.check_availability(
             db_booking.accommodation_id,
             dates_data.check_in_date,
             dates_data.check_out_date,
@@ -297,22 +328,22 @@ class BookingService:
         db_booking.status = BookingStatus.CONFIRMED
 
         # Calculate total amount
-        accommodation = (
-            self.db.query(Accommodation)
-            .filter(Accommodation.id == db_booking.accommodation_id)
-            .first()
+        accommodation_stmt = select(Accommodation).where(
+            Accommodation.id == db_booking.accommodation_id
         )
+        accommodation_result = await self.db.execute(accommodation_stmt)
+        accommodation = accommodation_result.scalar_one_or_none()
         if accommodation:
             nights = (dates_data.check_out_date - dates_data.check_in_date).days
             db_booking.total_amount = accommodation.price_per_night * nights
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def check_in(self, booking_id: int, checkin_data: BookingCheckIn) -> Booking:
+    async def check_in(self, booking_id: int, checkin_data: BookingCheckIn) -> Booking:
         """Process check-in for a booking"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -325,7 +356,15 @@ class BookingService:
             )
 
         db_booking.status = BookingStatus.CHECKED_IN
-        db_booking.actual_check_in = checkin_data.actual_check_in or datetime.utcnow()
+        if checkin_data.actual_check_in:
+            # Convert timezone-aware datetime to UTC timezone-naive datetime
+            actual_check_in = checkin_data.actual_check_in
+            if actual_check_in.tzinfo is not None:
+                actual_check_in = actual_check_in.utctimetuple()
+                actual_check_in = datetime(*actual_check_in[:6])
+            db_booking.actual_check_in = actual_check_in
+        else:
+            db_booking.actual_check_in = datetime.utcnow()
 
         if checkin_data.comments:
             current_comments = db_booking.comments or ""
@@ -333,13 +372,15 @@ class BookingService:
                 f"{current_comments}\nCheck-in: {checkin_data.comments}".strip()
             )
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def check_out(self, booking_id: int, checkout_data: BookingCheckOut) -> Booking:
+    async def check_out(
+        self, booking_id: int, checkout_data: BookingCheckOut
+    ) -> Booking:
         """Process check-out for a booking"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -352,9 +393,15 @@ class BookingService:
             )
 
         db_booking.status = BookingStatus.CHECKED_OUT
-        db_booking.actual_check_out = (
-            checkout_data.actual_check_out or datetime.utcnow()
-        )
+        if checkout_data.actual_check_out:
+            # Convert timezone-aware datetime to UTC timezone-naive datetime
+            actual_check_out = checkout_data.actual_check_out
+            if actual_check_out.tzinfo is not None:
+                actual_check_out = actual_check_out.utctimetuple()
+                actual_check_out = datetime(*actual_check_out[:6])
+            db_booking.actual_check_out = actual_check_out
+        else:
+            db_booking.actual_check_out = datetime.utcnow()
 
         if checkout_data.comments:
             current_comments = db_booking.comments or ""
@@ -362,13 +409,15 @@ class BookingService:
                 f"{current_comments}\nCheck-out: {checkout_data.comments}".strip()
             )
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def add_payment(self, booking_id: int, payment_data: BookingPayment) -> Booking:
+    async def add_payment(
+        self, booking_id: int, payment_data: BookingPayment
+    ) -> Booking:
         """Add payment to a booking"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -391,13 +440,13 @@ class BookingService:
             payment_note = f"Payment: +{payment_data.amount} - {payment_data.comments}"
             db_booking.comments = f"{current_comments}\n{payment_note}".strip()
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def cancel(self, booking_id: int, reason: Optional[str] = None) -> Booking:
+    async def cancel(self, booking_id: int, reason: Optional[str] = None) -> Booking:
         """Cancel a booking"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -421,13 +470,13 @@ class BookingService:
             current_comments = db_booking.comments or ""
             db_booking.comments = f"{current_comments}\nCancelled: {reason}".strip()
 
-        self.db.commit()
-        self.db.refresh(db_booking)
+        await self.db.commit()
+        await self.db.refresh(db_booking)
         return db_booking
 
-    def delete(self, booking_id: int) -> bool:
+    async def delete(self, booking_id: int) -> bool:
         """Delete a booking (only if not checked-in or checked-out)"""
-        db_booking = self.get_by_id(booking_id)
+        db_booking = await self.get_by_id(booking_id)
         if not db_booking:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
@@ -440,12 +489,12 @@ class BookingService:
             )
 
         self.db.delete(db_booking)
-        self.db.commit()
+        await self.db.commit()
         return True
 
-    def get_with_details(self, booking_id: int) -> Optional[BookingWithDetails]:
+    async def get_with_details(self, booking_id: int) -> Optional[BookingWithDetails]:
         """Get booking with client and accommodation details"""
-        booking = self.get_by_id(booking_id)
+        booking = await self.get_by_id(booking_id)
         if not booking:
             return None
 
@@ -474,3 +523,283 @@ class BookingService:
             }
 
         return BookingWithDetails.model_validate(booking_dict)
+
+    # New methods for inventory and custom items integration
+    async def create_with_items(self, booking_data: BookingCreateWithItems) -> Booking:
+        """Create booking with inventory and custom items"""
+        # Create base booking first
+        base_booking_data = BookingCreate(
+            client_id=booking_data.client_id,
+            accommodation_id=booking_data.accommodation_id,
+            check_in_date=booking_data.check_in_date,
+            check_out_date=booking_data.check_out_date,
+            is_open_dates=booking_data.is_open_dates,
+            guests_count=booking_data.guests_count,
+            comments=booking_data.comments,
+        )
+
+        booking = await self.create(base_booking_data)
+
+        # Add inventory items
+        if booking_data.inventory_items:
+            await self._add_inventory_items(booking.id, booking_data.inventory_items)
+
+        # Add custom items and recalculate total
+        if booking_data.custom_items:
+            await self._add_custom_items(booking.id, booking_data.custom_items)
+            await self._recalculate_booking_total(booking.id)
+
+        return await self.get_by_id(booking.id)
+
+    async def create_open_dates_with_items(
+        self, booking_data: BookingCreateOpenDatesWithItems
+    ) -> Booking:
+        """Create open-dates booking with inventory and custom items"""
+        # Convert to regular booking data
+        full_booking_data = BookingCreateWithItems(
+            **booking_data.model_dump(),
+            check_in_date=None,
+            check_out_date=None,
+            is_open_dates=True,
+        )
+        return await self.create_with_items(full_booking_data)
+
+    async def _add_inventory_items(
+        self, booking_id: int, inventory_items: list
+    ) -> None:
+        """Add inventory items to a booking"""
+        inventory_service = InventoryService(self.db)
+
+        for item_data in inventory_items:
+            # Verify inventory item exists
+            inventory_item = await inventory_service.get_inventory_item(
+                item_data.inventory_item_id
+            )
+            if not inventory_item:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Inventory item {item_data.inventory_item_id} not found",
+                )
+
+            # Create booking inventory assignment
+            booking_inventory = BookingInventory(
+                booking_id=booking_id,
+                inventory_item_id=item_data.inventory_item_id,
+            )
+            self.db.add(booking_inventory)
+
+        await self.db.commit()
+
+    async def _add_custom_items(self, booking_id: int, custom_items: list) -> None:
+        """Add custom items to a booking"""
+        custom_item_service = CustomItemService(self.db)
+
+        for item_data in custom_items:
+            await custom_item_service.create_booking_custom_item(booking_id, item_data)
+
+    async def _recalculate_booking_total(self, booking_id: int) -> None:
+        """Recalculate booking total including custom items"""
+        booking = await self.get_by_id(booking_id)
+        if not booking:
+            return
+
+        # Start with accommodation cost
+        total = booking.total_amount
+
+        # Add custom items cost
+        custom_item_service = CustomItemService(self.db)
+        custom_items_total = await custom_item_service.calculate_custom_items_total(
+            booking_id
+        )
+        total += custom_items_total
+
+        # Update booking total
+        booking.total_amount = total
+        await self.db.commit()
+
+    async def get_with_items(self, booking_id: int) -> Optional[BookingWithItems]:
+        """Get booking with inventory and custom items"""
+        booking = await self.get_by_id(booking_id)
+        if not booking:
+            return None
+
+        booking_dict = booking.__dict__.copy()
+
+        # Add inventory items
+        inventory_stmt = (
+            select(BookingInventory)
+            .options(
+                selectinload(BookingInventory.inventory_item).selectinload(
+                    InventoryItem.type
+                )
+            )
+            .where(BookingInventory.booking_id == booking_id)
+        )
+        inventory_result = await self.db.execute(inventory_stmt)
+        inventory_assignments = inventory_result.scalars().all()
+
+        booking_dict["inventory_items"] = [
+            {
+                "id": assignment.id,
+                "inventory_item_id": assignment.inventory_item_id,
+                "inventory_item": {
+                    "id": assignment.inventory_item.id,
+                    "number": assignment.inventory_item.number,
+                    "type_name": assignment.inventory_item.type.name
+                    if assignment.inventory_item.type
+                    else None,
+                    "condition": assignment.inventory_item.condition.value,
+                }
+                if assignment.inventory_item
+                else None,
+            }
+            for assignment in inventory_assignments
+        ]
+
+        # Add custom items
+        custom_items_stmt = (
+            select(BookingCustomItem)
+            .options(selectinload(BookingCustomItem.custom_item))
+            .where(BookingCustomItem.booking_id == booking_id)
+        )
+        custom_items_result = await self.db.execute(custom_items_stmt)
+        custom_assignments = custom_items_result.scalars().all()
+
+        booking_dict["custom_items"] = [
+            {
+                "id": assignment.id,
+                "custom_item_id": assignment.custom_item_id,
+                "quantity": assignment.quantity,
+                "price_at_booking": float(assignment.price_at_booking),
+                "custom_item": {
+                    "id": assignment.custom_item.id,
+                    "name": assignment.custom_item.name,
+                    "description": assignment.custom_item.description,
+                    "current_price": float(assignment.custom_item.price),
+                }
+                if assignment.custom_item
+                else None,
+            }
+            for assignment in custom_assignments
+        ]
+
+        return BookingWithItems.model_validate(booking_dict)
+
+    async def get_with_full_details(
+        self, booking_id: int
+    ) -> Optional[BookingWithFullDetails]:
+        """Get booking with all details including client, accommodation, and items"""
+        booking_with_details = await self.get_with_details(booking_id)
+        booking_with_items = await self.get_with_items(booking_id)
+
+        if not booking_with_details or not booking_with_items:
+            return None
+
+        # Combine both responses
+        combined_dict = booking_with_details.model_dump()
+        combined_dict["inventory_items"] = booking_with_items.inventory_items
+        combined_dict["custom_items"] = booking_with_items.custom_items
+
+        return BookingWithFullDetails.model_validate(combined_dict)
+
+    async def add_inventory_item(self, booking_id: int, inventory_item_id: int) -> None:
+        """Add an inventory item to an existing booking"""
+        booking = await self.get_by_id(booking_id)
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+            )
+
+        inventory_service = InventoryService(self.db)
+        inventory_item = await inventory_service.get_inventory_item(inventory_item_id)
+        if not inventory_item:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inventory item not found",
+            )
+
+        # Check if item is already assigned to this booking
+        existing_stmt = select(BookingInventory).where(
+            and_(
+                BookingInventory.booking_id == booking_id,
+                BookingInventory.inventory_item_id == inventory_item_id,
+            )
+        )
+        existing_result = await self.db.execute(existing_stmt)
+        if existing_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inventory item already assigned to this booking",
+            )
+
+        booking_inventory = BookingInventory(
+            booking_id=booking_id,
+            inventory_item_id=inventory_item_id,
+        )
+        self.db.add(booking_inventory)
+        await self.db.commit()
+
+    async def remove_inventory_item(
+        self, booking_id: int, inventory_item_id: int
+    ) -> None:
+        """Remove an inventory item from a booking"""
+        stmt = select(BookingInventory).where(
+            and_(
+                BookingInventory.booking_id == booking_id,
+                BookingInventory.inventory_item_id == inventory_item_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        booking_inventory = result.scalar_one_or_none()
+
+        if not booking_inventory:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inventory item not assigned to this booking",
+            )
+
+        await self.db.delete(booking_inventory)
+        await self.db.commit()
+
+    async def add_custom_item(
+        self, booking_id: int, custom_item_id: int, quantity: int
+    ) -> None:
+        """Add a custom item to an existing booking"""
+        booking = await self.get_by_id(booking_id)
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found"
+            )
+
+        custom_item_service = CustomItemService(self.db)
+        from app.schemas.custom_item import BookingCustomItemCreate
+
+        custom_item_data = BookingCustomItemCreate(
+            custom_item_id=custom_item_id, quantity=quantity
+        )
+
+        await custom_item_service.create_booking_custom_item(
+            booking_id, custom_item_data
+        )
+
+        # Recalculate total
+        await self._recalculate_booking_total(booking_id)
+
+    async def remove_custom_item(self, booking_custom_item_id: int) -> None:
+        """Remove a custom item from a booking"""
+        custom_item_service = CustomItemService(self.db)
+        booking_custom_item = await custom_item_service.get_booking_custom_item(
+            booking_custom_item_id
+        )
+
+        if not booking_custom_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Booking custom item not found",
+            )
+
+        booking_id = booking_custom_item.booking_id
+        await custom_item_service.delete_booking_custom_item(booking_custom_item_id)
+
+        # Recalculate total
+        await self._recalculate_booking_total(booking_id)

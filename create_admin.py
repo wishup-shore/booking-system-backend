@@ -4,13 +4,15 @@ Script to create an admin user (staff role) for the booking system.
 Run this script to create the first administrative user.
 """
 
+import asyncio
 import sys
-from app.core.database import SessionLocal
+from sqlalchemy import select
+from app.core.database import AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.core.security import get_password_hash
 
 
-def create_admin_user():
+async def create_admin_user():
     print("🔧 Creating admin user for Booking System")
     print("-" * 40)
 
@@ -40,64 +42,60 @@ def create_admin_user():
         print("❌ Password must be at least 6 characters long")
         return False
 
-    # Create database session
-    db = SessionLocal()
-
-    try:
-        # Check if user already exists
-        existing_user = (
-            db.query(User)
-            .filter((User.username == username) | (User.email == email))
-            .first()
-        )
-
-        if existing_user:
-            print(
-                f"❌ User with username '{username}' or email '{email}' already exists"
+    # Create async database session
+    async with AsyncSessionLocal() as db:
+        try:
+            # Check if user already exists
+            existing_user_stmt = select(User).where(
+                (User.username == username) | (User.email == email)
             )
+            existing_user_result = await db.execute(existing_user_stmt)
+            existing_user = existing_user_result.scalar_one_or_none()
+
+            if existing_user:
+                print(
+                    f"❌ User with username '{username}' or email '{email}' already exists"
+                )
+                return False
+
+            # Create new admin user
+            hashed_password = get_password_hash(password)
+            admin_user = User(
+                username=username,
+                email=email,
+                hashed_password=hashed_password,
+                role=UserRole.STAFF,  # Highest permission role
+                is_active=True,
+            )
+
+            db.add(admin_user)
+            await db.commit()
+            await db.refresh(admin_user)
+
+            print("✅ Admin user created successfully!")
+            print(f"   Username: {admin_user.username}")
+            print(f"   Email: {admin_user.email}")
+            print(f"   Role: {admin_user.role.value}")
+            print(f"   User ID: {admin_user.id}")
+            print()
+            print("🚀 You can now login to the system with these credentials.")
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Error creating admin user: {str(e)}")
+            await db.rollback()
             return False
 
-        # Create new admin user
-        hashed_password = get_password_hash(password)
-        admin_user = User(
-            username=username,
-            email=email,
-            hashed_password=hashed_password,
-            role=UserRole.STAFF,  # Highest permission role
-            is_active=True,
-        )
 
-        db.add(admin_user)
-        db.commit()
-        db.refresh(admin_user)
-
-        print("✅ Admin user created successfully!")
-        print(f"   Username: {admin_user.username}")
-        print(f"   Email: {admin_user.email}")
-        print(f"   Role: {admin_user.role.value}")
-        print(f"   User ID: {admin_user.id}")
-        print()
-        print("🚀 You can now login to the system with these credentials.")
-
-        return True
-
-    except Exception as e:
-        print(f"❌ Error creating admin user: {str(e)}")
-        db.rollback()
-        return False
-
-    finally:
-        db.close()
-
-
-def main():
+async def main():
     print("=" * 50)
     print("🏠 BOOKING SYSTEM - ADMIN USER CREATOR")
     print("=" * 50)
     print()
 
     try:
-        success = create_admin_user()
+        success = await create_admin_user()
         if success:
             print("\n" + "=" * 50)
             print("✅ SETUP COMPLETE!")
@@ -118,4 +116,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

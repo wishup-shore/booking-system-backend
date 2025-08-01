@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_active_user
@@ -10,52 +10,53 @@ from app.schemas.accommodation import (
     AccommodationCreate,
     AccommodationUpdate,
 )
+from app.schemas.responses import MessageResponse
 from app.services.accommodation_service import AccommodationService
 
 router = APIRouter()
 
 
-def require_staff_role(current_user: User = Depends(get_active_user)):
+async def require_staff_role(current_user: User = Depends(get_active_user)):
     if current_user.role != UserRole.STAFF:
         raise HTTPException(status_code=403, detail="Staff role required")
     return current_user
 
 
 @router.get("/", response_model=List[Accommodation])
-def get_accommodations(
-    db: Session = Depends(get_db), current_user: User = Depends(get_active_user)
+async def get_accommodations(
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_active_user)
 ):
     service = AccommodationService(db)
-    return service.get_all()
+    return await service.get_all()
 
 
 @router.post("/", response_model=Accommodation)
-def create_accommodation(
+async def create_accommodation(
     accommodation_data: AccommodationCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
-    return service.create(accommodation_data)
+    return await service.create(accommodation_data)
 
 
 @router.put("/{accommodation_id}", response_model=Accommodation)
-def update_accommodation(
+async def update_accommodation(
     accommodation_id: int,
     accommodation_data: AccommodationUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
-    return service.update(accommodation_id, accommodation_data)
+    return await service.update(accommodation_id, accommodation_data)
 
 
-@router.delete("/{accommodation_id}")
-def delete_accommodation(
+@router.delete("/{accommodation_id}", response_model=MessageResponse)
+async def delete_accommodation(
     accommodation_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_role),
 ):
     service = AccommodationService(db)
-    service.delete(accommodation_id)
-    return {"message": "Accommodation deleted successfully"}
+    await service.delete(accommodation_id)
+    return MessageResponse(message="Accommodation deleted successfully")
