@@ -6,10 +6,12 @@ Run this script to create the first administrative user.
 
 import asyncio
 import sys
+
 from sqlalchemy import select
+
 from app.core.database import AsyncSessionLocal
-from app.models.user import User, UserRole
 from app.core.security import get_password_hash
+from app.models.user import User, UserRole
 
 
 async def create_admin_user():

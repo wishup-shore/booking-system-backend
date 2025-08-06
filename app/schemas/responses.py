@@ -6,8 +6,9 @@ returned raw dictionaries, ensuring clear Swagger documentation for frontend dev
 """
 
 from datetime import datetime
-from typing import Optional, Any, List
 from decimal import Decimal
+from typing import Any, List, Optional
+
 from pydantic import BaseModel, Field
 
 

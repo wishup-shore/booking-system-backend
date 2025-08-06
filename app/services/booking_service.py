@@ -1,32 +1,35 @@
-from typing import List, Optional
-from datetime import datetime, date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
+from fastapi import HTTPException, status
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, and_, or_, func
-from fastapi import HTTPException, status
 
+from app.models.accommodation import Accommodation
 from app.models.booking import Booking, BookingStatus, PaymentStatus
 from app.models.client import Client
-from app.models.accommodation import Accommodation
+from app.models.custom_item import BookingCustomItem
+from app.models.inventory import BookingInventory, InventoryItem
 from app.schemas.booking import (
-    BookingCreate,
-    BookingCreateOpenDates,
-    BookingCreateWithItems,
-    BookingCreateOpenDatesWithItems,
-    BookingUpdate,
-    BookingSetDates,
-    BookingPayment,
     BookingCheckIn,
     BookingCheckOut,
+    BookingCreate,
+    BookingCreateOpenDates,
+    BookingCreateOpenDatesWithItems,
+    BookingCreateWithItems,
+    BookingPayment,
+    BookingSetDates,
+    BookingUpdate,
     BookingWithDetails,
-    BookingWithItems,
     BookingWithFullDetails,
+    BookingWithItems,
 )
-from app.models.inventory import InventoryItem, BookingInventory
-from app.models.custom_item import BookingCustomItem
-from app.services.inventory_service import InventoryService
+from app.schemas.responses import PaginatedResponse
+from app.schemas.search import BookingSearchRequest
 from app.services.custom_item_service import CustomItemService
+from app.services.inventory_service import InventoryService
 
 
 class BookingService:
@@ -136,19 +139,9 @@ class BookingService:
             Booking.accommodation_id == accommodation_id,
             not Booking.is_open_dates,  # Only bookings with confirmed dates
             Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
-            or_(
-                and_(
-                    Booking.check_in_date <= check_out,
-                    Booking.check_out_date >= check_in,
-                ),
-                and_(
-                    Booking.check_in_date >= check_in,
-                    Booking.check_in_date <= check_out,
-                ),
-                and_(
-                    Booking.check_out_date >= check_in,
-                    Booking.check_out_date <= check_out,
-                ),
+            and_(
+                Booking.check_in_date < check_out,
+                Booking.check_out_date > check_in,
             ),
         ]
 
@@ -803,3 +796,304 @@ class BookingService:
 
         # Recalculate total
         await self._recalculate_booking_total(booking_id)
+
+    # Enhanced search and filtering methods
+    async def advanced_search(
+        self, search_request: "BookingSearchRequest"
+    ) -> "PaginatedResponse":
+        """Perform advanced search with multiple criteria and optimized performance."""
+        from app.core.pagination import CursorPaginator, SortParams
+        from app.core.query_builders import BookingQueryBuilder
+
+        # Initialize query builder
+        query_builder = BookingQueryBuilder(Booking)
+        filters = search_request.filters
+
+        # Apply status filters
+        if filters.statuses:
+            query_builder.filter_by_status(
+                [status.value for status in filters.statuses]
+            )
+
+        if filters.payment_statuses:
+            query_builder.filter_by_payment_status(
+                [status.value for status in filters.payment_statuses]
+            )
+
+        # Apply date filters
+        if filters.check_in_date_range:
+            date_range = filters.check_in_date_range
+            query_builder.filter_by_dates(date_range.start_date, date_range.end_date)
+
+        if filters.created_date_range:
+            date_range = filters.created_date_range
+            query_builder.where_date_range(
+                Booking.created_at, date_range.start_date, date_range.end_date
+            )
+
+        # Apply client filters
+        if filters.client_name:
+            query_builder.filter_by_client_name(filters.client_name)
+
+        if filters.client_phone:
+            query_builder.where_text_contains(Client.phone, filters.client_phone)
+
+        if filters.client_email:
+            query_builder.where_text_contains(Client.email, filters.client_email)
+
+        if filters.client_ids:
+            query_builder.where_in(Booking.client_id, filters.client_ids)
+
+        # Apply accommodation filters
+        if filters.accommodation_ids:
+            query_builder.where_in(Booking.accommodation_id, filters.accommodation_ids)
+
+        if filters.accommodation_type_ids:
+            query_builder.filter_by_accommodation_type(filters.accommodation_type_ids)
+
+        # Apply numeric filters
+        if filters.guest_count_range:
+            range_filter = filters.guest_count_range
+            query_builder.filter_by_guest_count(
+                range_filter.min_value, range_filter.max_value
+            )
+
+        if filters.total_amount_range:
+            range_filter = filters.total_amount_range
+            query_builder.filter_by_amount_range(
+                range_filter.min_value, range_filter.max_value
+            )
+
+        # Apply special filters
+        if filters.is_open_dates is not None:
+            query_builder.filter_by_open_dates(filters.is_open_dates)
+
+        # Apply text search across relevant fields
+        if filters.text_search and filters.text_search.query:
+            search_text = filters.text_search.query
+            query_builder.where(
+                or_(
+                    func.lower(Client.first_name).contains(search_text.lower()),
+                    func.lower(Client.last_name).contains(search_text.lower()),
+                    Client.phone.contains(search_text),
+                    func.lower(Client.email).contains(search_text.lower()),
+                    Booking.comments.contains(search_text),
+                    func.cast(Booking.id, func.String).contains(search_text),
+                )
+            )
+
+        # Build the query
+        base_query = query_builder.build()
+
+        # Use cursor-based pagination for better performance
+        paginator = CursorPaginator(Booking, self.db)
+        sort_params = SortParams(
+            sort_by=search_request.sort.sort_by,
+            sort_direction=search_request.sort.sort_direction,
+        )
+
+        return await paginator.paginate(
+            base_query, search_request.pagination, sort_params, count_total=True
+        )
+
+    async def search_by_client_name(
+        self, client_name: str, skip: int = 0, limit: int = 100
+    ) -> List[Booking]:
+        """Search bookings by client name with optimized query."""
+        stmt = (
+            select(Booking)
+            .join(Client)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(
+                or_(
+                    func.lower(Client.first_name).contains(client_name.lower()),
+                    func.lower(Client.last_name).contains(client_name.lower()),
+                    func.concat(
+                        func.lower(Client.first_name), " ", func.lower(Client.last_name)
+                    ).contains(client_name.lower()),
+                )
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search_by_date_range_and_status(
+        self,
+        start_date: date,
+        end_date: date,
+        statuses: List[BookingStatus],
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Booking]:
+        """Search bookings by date range and status with index optimization."""
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(
+                and_(
+                    Booking.status.in_(statuses),
+                    or_(
+                        and_(
+                            Booking.check_in_date >= start_date,
+                            Booking.check_in_date <= end_date,
+                        ),
+                        and_(
+                            Booking.check_out_date >= start_date,
+                            Booking.check_out_date <= end_date,
+                        ),
+                        and_(
+                            Booking.check_in_date <= start_date,
+                            Booking.check_out_date >= end_date,
+                        ),
+                    ),
+                )
+            )
+            .order_by(Booking.check_in_date.asc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_bookings_requiring_attention(
+        self, skip: int = 0, limit: int = 100
+    ) -> List[Booking]:
+        """Get bookings that require staff attention with optimized query."""
+        today = date.today()
+
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.client),
+                selectinload(Booking.accommodation).selectinload(Accommodation.type),
+            )
+            .where(
+                or_(
+                    # Open dates bookings that need date assignment
+                    and_(
+                        Booking.is_open_dates,
+                        Booking.status == BookingStatus.PENDING,
+                    ),
+                    # Pending bookings that are overdue
+                    and_(
+                        Booking.status == BookingStatus.PENDING,
+                        Booking.created_at < datetime.now() - timedelta(days=3),
+                    ),
+                    # Bookings checking in today that aren't confirmed
+                    and_(
+                        Booking.check_in_date == today,
+                        Booking.status == BookingStatus.CONFIRMED,
+                    ),
+                    # Bookings with partial payment close to check-in
+                    and_(
+                        Booking.payment_status == PaymentStatus.PARTIAL,
+                        Booking.check_in_date <= today + timedelta(days=7),
+                        Booking.status.in_(
+                            [BookingStatus.CONFIRMED, BookingStatus.PENDING]
+                        ),
+                    ),
+                )
+            )
+            .order_by(
+                Booking.check_in_date.asc().nullslast(), Booking.created_at.desc()
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_revenue_by_date_range(
+        self, start_date: date, end_date: date, include_pending: bool = False
+    ) -> Dict[str, Any]:
+        """Get revenue statistics for date range with optimized aggregation."""
+        status_filter = [
+            BookingStatus.CONFIRMED,
+            BookingStatus.CHECKED_IN,
+            BookingStatus.CHECKED_OUT,
+        ]
+        if include_pending:
+            status_filter.append(BookingStatus.PENDING)
+
+        # Total revenue query
+        revenue_stmt = select(
+            func.sum(Booking.total_amount).label("total_revenue"),
+            func.sum(Booking.paid_amount).label("total_paid"),
+            func.count(Booking.id).label("booking_count"),
+            func.avg(Booking.total_amount).label("average_booking_value"),
+        ).where(
+            and_(
+                Booking.status.in_(status_filter),
+                Booking.check_in_date >= start_date,
+                Booking.check_in_date <= end_date,
+            )
+        )
+
+        result = await self.db.execute(revenue_stmt)
+        row = result.first()
+
+        return {
+            "total_revenue": float(row.total_revenue or 0),
+            "total_paid": float(row.total_paid or 0),
+            "outstanding_amount": float(
+                (row.total_revenue or 0) - (row.total_paid or 0)
+            ),
+            "booking_count": row.booking_count or 0,
+            "average_booking_value": float(row.average_booking_value or 0),
+            "date_range": {"start_date": start_date, "end_date": end_date},
+        }
+
+    async def get_occupancy_statistics(
+        self, start_date: date, end_date: date
+    ) -> Dict[str, Any]:
+        """Get occupancy statistics with performance optimization."""
+        # Get total accommodation count
+        total_accommodations_stmt = select(func.count(Accommodation.id))
+        total_accommodations_result = await self.db.execute(total_accommodations_stmt)
+        total_accommodations = total_accommodations_result.scalar()
+
+        # Get occupied accommodation-days
+        occupied_stmt = select(func.count(Booking.id)).where(
+            and_(
+                Booking.status.in_(
+                    [
+                        BookingStatus.CONFIRMED,
+                        BookingStatus.CHECKED_IN,
+                        BookingStatus.CHECKED_OUT,
+                    ]
+                ),
+                Booking.check_in_date <= end_date,
+                Booking.check_out_date >= start_date,
+                not Booking.is_open_dates,
+            )
+        )
+
+        occupied_result = await self.db.execute(occupied_stmt)
+        occupied_bookings = occupied_result.scalar()
+
+        # Calculate date range
+        date_range_days = (end_date - start_date).days + 1
+        total_possible_bookings = total_accommodations * date_range_days
+
+        occupancy_rate = (
+            (occupied_bookings / total_possible_bookings * 100)
+            if total_possible_bookings > 0
+            else 0
+        )
+
+        return {
+            "occupancy_rate": round(occupancy_rate, 2),
+            "occupied_accommodation_days": occupied_bookings,
+            "total_possible_accommodation_days": total_possible_bookings,
+            "total_accommodations": total_accommodations,
+            "date_range_days": date_range_days,
+            "period": {"start_date": start_date, "end_date": end_date},
+        }

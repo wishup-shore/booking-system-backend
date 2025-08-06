@@ -1,15 +1,16 @@
 from typing import List
+
 from fastapi import APIRouter
 
+from app.core.common_deps import (
+    AccommodationTypeServiceDep,
+    CurrentUserDep,
+    StaffUserDep,
+)
 from app.schemas.accommodation import (
     AccommodationType,
     AccommodationTypeCreate,
     AccommodationTypeUpdate,
-)
-from app.core.common_deps import (
-    CurrentUserDep,
-    StaffUserDep,
-    AccommodationTypeServiceDep,
 )
 
 router = APIRouter()

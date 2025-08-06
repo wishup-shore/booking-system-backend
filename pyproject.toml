@@ -19,4 +19,5 @@ dependencies = [
     "asyncpg>=0.30.0",
     "greenlet>=3.2.3",
     "ruff>=0.12.7",
+    "ty>=0.0.1a16",
 ]

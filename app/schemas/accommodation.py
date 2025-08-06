@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Optional
 from decimal import Decimal
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
-from app.models.accommodation import AccommodationStatus, AccommodationCondition
+from app.models.accommodation import AccommodationCondition, AccommodationStatus
 
 
 class AccommodationTypeBase(BaseModel):

@@ -1,12 +1,13 @@
-from typing import List, Dict, Optional, Tuple
 from datetime import date, timedelta
+from typing import Dict, List, Optional, Tuple
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, and_, or_, func
 
-from app.models.booking import Booking, BookingStatus
 from app.models.accommodation import Accommodation
-from app.schemas.booking import CalendarOccupancy, CalendarEvent
+from app.models.booking import Booking, BookingStatus
+from app.schemas.booking import CalendarEvent, CalendarOccupancy
 
 
 class CalendarService:
@@ -196,20 +197,16 @@ class CalendarService:
         conditions = [
             Booking.accommodation_id == accommodation_id,
             not Booking.is_open_dates,  # Only bookings with confirmed dates
-            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
-            or_(
-                and_(
-                    Booking.check_in_date <= end_date,
-                    Booking.check_out_date >= start_date,
-                ),
-                and_(
-                    Booking.check_in_date >= start_date,
-                    Booking.check_in_date <= end_date,
-                ),
-                and_(
-                    Booking.check_out_date >= start_date,
-                    Booking.check_out_date <= end_date,
-                ),
+            Booking.status.in_(
+                [
+                    BookingStatus.PENDING,
+                    BookingStatus.CONFIRMED,
+                    BookingStatus.CHECKED_IN,
+                ]
+            ),
+            and_(
+                Booking.check_in_date < end_date,
+                Booking.check_out_date > start_date,
             ),
         ]
 
@@ -257,10 +254,14 @@ class CalendarService:
         if total_accommodations == 0:
             return {
                 "total_accommodations": 0,
-                "total_nights": 0,
                 "occupied_nights": 0,
+                "available_nights": 0,
                 "occupancy_rate": 0.0,
-                "revenue": 0.0,
+                "total_revenue": 0.0,
+                "average_daily_rate": 0.0,
+                "revenue_per_available_room": 0.0,
+                "period_start": start_date.isoformat(),
+                "period_end": end_date.isoformat(),
             }
 
         # Calculate total possible nights
@@ -323,12 +324,25 @@ class CalendarService:
             (occupied_nights / total_nights * 100) if total_nights > 0 else 0.0
         )
 
+        # Calculate additional metrics
+        available_nights = total_nights
+        average_daily_rate = (
+            total_revenue / occupied_nights if occupied_nights > 0 else 0.0
+        )
+        revenue_per_available_room = (
+            total_revenue / available_nights if available_nights > 0 else 0.0
+        )
+
         return {
             "total_accommodations": total_accommodations,
-            "total_nights": total_nights,
             "occupied_nights": occupied_nights,
+            "available_nights": available_nights,
             "occupancy_rate": round(occupancy_rate, 2),
-            "revenue": round(total_revenue, 2),
+            "total_revenue": round(total_revenue, 2),
+            "average_daily_rate": round(average_daily_rate, 2),
+            "revenue_per_available_room": round(revenue_per_available_room, 2),
+            "period_start": start_date.isoformat(),
+            "period_end": end_date.isoformat(),
         }
 
     async def get_accommodation_schedule(

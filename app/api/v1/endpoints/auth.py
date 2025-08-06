@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_active_user
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.schemas.responses import CurrentUserResponse, UserRegistrationResponse
 from app.schemas.user import LoginRequest, Token, UserCreate
-from app.schemas.responses import UserRegistrationResponse, CurrentUserResponse
 from app.services.auth_service import AuthService
 
 router = APIRouter()
@@ -25,7 +25,7 @@ async def register(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_active_user),
 ):
-    if current_user.role.value != "staff":
+    if current_user.role != UserRole.STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only staff can create new users",

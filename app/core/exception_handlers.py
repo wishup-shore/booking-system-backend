@@ -6,20 +6,21 @@ into appropriate HTTP responses with consistent formatting and status codes.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import (
+    AccessDeniedError,
+    BusinessRuleViolationError,
+    ConflictError,
     DomainException,
     EntityNotFoundError,
-    AccessDeniedError,
-    ValidationError,
-    ConflictError,
-    BusinessRuleViolationError,
     InactiveUserError,
+    ValidationError,
 )
 
 logger = logging.getLogger(__name__)

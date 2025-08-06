@@ -6,28 +6,30 @@ reducing boilerplate code in endpoint functions.
 """
 
 from typing import Annotated
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.security import get_active_user
-from app.models.user import User
 from app.core.auth_deps import (
+    RequireActiveUser,
     RequireStaffRole,
     RequireUserOrStaffRole,
-    RequireActiveUser,
 )
+from app.core.database import get_db
+from app.core.security import get_active_user
 from app.core.service_deps import (
     GetAccommodationService,
     GetAccommodationTypeService,
-    GetBookingService,
-    GetClientService,
-    GetClientGroupService,
     GetAuthService,
+    GetBatchOperationService,
+    GetBookingService,
     GetCalendarService,
-    GetInventoryService,
+    GetClientGroupService,
+    GetClientService,
     GetCustomItemService,
+    GetInventoryService,
 )
+from app.models.user import User
 
 # Database dependencies
 DatabaseDep = Annotated[AsyncSession, Depends(get_db)]
@@ -50,3 +52,4 @@ AuthServiceDep = GetAuthService
 CalendarServiceDep = GetCalendarService
 InventoryServiceDep = GetInventoryService
 CustomItemServiceDep = GetCustomItemService
+BatchOperationServiceDep = GetBatchOperationService

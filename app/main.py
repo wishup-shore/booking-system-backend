@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
-from app.models.base import Base
 from app.core.database import async_engine
 from app.core.exception_handlers import EXCEPTION_HANDLERS
+from app.models.base import Base
 
 app = FastAPI(
     title="Booking System API",

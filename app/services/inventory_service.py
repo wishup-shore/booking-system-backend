@@ -1,15 +1,16 @@
 from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status
 
-from app.models.inventory import InventoryType, InventoryItem, BookingInventory
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.inventory import BookingInventory, InventoryItem, InventoryType
 from app.schemas.inventory import (
-    InventoryTypeCreate,
-    InventoryTypeUpdate,
     InventoryItemCreate,
     InventoryItemUpdate,
+    InventoryTypeCreate,
+    InventoryTypeUpdate,
 )
 
 

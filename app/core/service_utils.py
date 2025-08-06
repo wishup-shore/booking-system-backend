@@ -5,15 +5,16 @@ This module provides centralized utilities for common service layer patterns,
 eliminating code duplication and ensuring consistent behavior across services.
 """
 
-from typing import Optional, TypeVar, Any
-from app.models.user import User, UserRole
+from typing import Any, Optional, TypeVar
+
 from app.core.exceptions import (
-    EntityNotFoundError,
     AccessDeniedError,
+    ConflictError,
+    EntityNotFoundError,
     InactiveUserError,
     ValidationError,
-    ConflictError,
 )
+from app.models.user import User, UserRole
 
 T = TypeVar("T")
 

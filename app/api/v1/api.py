@@ -4,11 +4,12 @@ from app.api.v1.endpoints import (
     accommodation_types,
     accommodations,
     auth,
-    clients,
+    batch,
     bookings,
-    inventory_types,
-    inventory_items,
+    clients,
     custom_items,
+    inventory_items,
+    inventory_types,
 )
 
 api_router = APIRouter()
@@ -33,3 +34,4 @@ api_router.include_router(
 api_router.include_router(
     custom_items.router, prefix="/custom-items", tags=["custom-items"]
 )
+api_router.include_router(batch.router, prefix="/batch", tags=["batch-operations"])

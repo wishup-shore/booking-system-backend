@@ -6,13 +6,14 @@ eliminating the duplication of require_staff_role functions across endpoint file
 """
 
 from typing import Annotated
+
 from fastapi import Depends
 
 from app.core.security import get_active_user
 from app.core.service_utils import (
+    ensure_active_user,
     ensure_staff_access,
     ensure_user_or_staff_access,
-    ensure_active_user,
 )
 from app.models.user import User
 

@@ -1,16 +1,21 @@
 from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.accommodation import AccommodationType, Accommodation
+from app.core.service_utils import ensure_exists
+from app.models.accommodation import (
+    Accommodation,
+    AccommodationStatus,
+    AccommodationType,
+)
 from app.schemas.accommodation import (
+    AccommodationCreate,
     AccommodationTypeCreate,
     AccommodationTypeUpdate,
-    AccommodationCreate,
     AccommodationUpdate,
 )
-from app.core.service_utils import ensure_exists
 
 
 class AccommodationTypeService:
@@ -75,8 +80,19 @@ class AccommodationService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_all(self) -> List[Accommodation]:
+    async def get_all(
+        self,
+        type_id: Optional[int] = None,
+        status: Optional[AccommodationStatus] = None,
+    ) -> List[Accommodation]:
         stmt = select(Accommodation).options(selectinload(Accommodation.type))
+
+        if type_id is not None:
+            stmt = stmt.where(Accommodation.type_id == type_id)
+
+        if status is not None:
+            stmt = stmt.where(Accommodation.status == status)
+
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 

@@ -1,13 +1,14 @@
 from datetime import timedelta
 from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
-from fastapi import HTTPException, status
 
-from app.models.user import User
-from app.schemas.user import UserCreate, LoginRequest
-from app.core.security import verify_password, get_password_hash, create_access_token
+from fastapi import HTTPException, status
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
+from app.core.security import create_access_token, get_password_hash, verify_password
+from app.models.user import User
+from app.schemas.user import LoginRequest, UserCreate
 
 
 class AuthService:

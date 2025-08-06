@@ -5,7 +5,8 @@ This module provides centralized service instantiation through dependency inject
 eliminating the repeated pattern of manually creating service instances in endpoints.
 """
 
-from typing import Type, TypeVar, Callable, Annotated
+from typing import Annotated, Callable, Type, TypeVar
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,12 +15,13 @@ from app.services.accommodation_service import (
     AccommodationService,
     AccommodationTypeService,
 )
-from app.services.booking_service import BookingService
-from app.services.client_service import ClientService, ClientGroupService
 from app.services.auth_service import AuthService
+from app.services.batch_service import BatchOperationService
+from app.services.booking_service import BookingService
 from app.services.calendar_service import CalendarService
-from app.services.inventory_service import InventoryService
+from app.services.client_service import ClientGroupService, ClientService
 from app.services.custom_item_service import CustomItemService
+from app.services.inventory_service import InventoryService
 
 T = TypeVar("T")
 
@@ -63,6 +65,9 @@ GetInventoryService = Annotated[
 GetCustomItemService = Annotated[
     CustomItemService, Depends(get_service(CustomItemService))
 ]
+GetBatchOperationService = Annotated[
+    BatchOperationService, Depends(get_service(BatchOperationService))
+]
 
 # Legacy compatibility - individual dependency functions
 get_accommodation_service = get_service(AccommodationService)
@@ -74,3 +79,4 @@ get_auth_service = get_service(AuthService)
 get_calendar_service = get_service(CalendarService)
 get_inventory_service = get_service(InventoryService)
 get_custom_item_service = get_service(CustomItemService)
+get_batch_operation_service = get_service(BatchOperationService)
